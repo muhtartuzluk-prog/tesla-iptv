@@ -1,27 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tesla IPTV Player - Local M3U</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Tesla IPTV — HLS (hls.js) Player</title>
 <style>
-  body { font-family: Arial, sans-serif; background: #111; color: #eee; margin:0; padding:0; }
-  header { background: #222; padding: 10px; text-align: center; font-size: 1.5em; }
-  nav { display: flex; justify-content: space-around; background: #333; }
-  nav button { flex:1; padding: 10px; background: #333; color: #eee; border:none; cursor:pointer; }
-  nav button.active { background: #555; }
-  #searchBar { width: 90%; margin: 10px auto; display:block; padding:5px; font-size:1em; }
-  section { display:none; padding: 10px; max-height: 70vh; overflow-y: auto; }
+  body { font-family: Arial, Helvetica, sans-serif; background:#0b0b0b; color:#eee; margin:0; }
+  header { background:#151515; padding:12px 16px; font-size:18px; text-align:center; }
+  nav { display:flex; gap:4px; background:#1e1e1e; padding:6px; justify-content:space-around; }
+  nav button { flex:1; padding:10px; background:#2b2b2b; color:#eee; border:none; cursor:pointer; font-size:14px; }
+  nav button.active { background:#444; }
+  #searchBar { width:90%; margin:10px auto; display:block; padding:8px; font-size:15px; border-radius:6px; border:1px solid #333; background:#0f0f0f; color:#eee; }
+  section { display:none; padding:8px 12px; max-height:62vh; overflow:auto; }
   section.active { display:block; }
-  ul { list-style:none; padding:0; }
-  li { padding:5px 0; cursor:pointer; border-bottom: 1px solid #444; }
-  video { width: 100%; margin-top: 10px; }
-  #backBtn { position: fixed; top: 10px; right: 10px; padding: 10px 15px; font-size: 1em; background: #f00; color: #fff; border: none; cursor: pointer; display:none; z-index: 1000; }
+  ul { list-style:none; padding:0; margin:0; }
+  li { padding:8px 6px; border-bottom:1px solid #222; cursor:pointer; }
+  li:hover { background:#141414; }
+  #playerWrap { padding:8px 12px; }
+  video { width:100%; background:black; max-height:40vh; }
+  #backBtn { position:fixed; right:12px; top:12px; z-index:999; padding:8px 12px; border:none; background:#d32f2f; color:white; display:none; border-radius:6px; }
+  .small { font-size:12px; color:#999; margin-left:6px; }
+  footer { padding:8px 12px; font-size:12px; color:#999; text-align:center; }
+  #log { font-size:12px; color:#f88; padding:8px 12px; display:none; white-space:pre-wrap; }
 </style>
 </head>
 <body>
 
-<header>Tesla IPTV Player (Local M3U)</header>
+<header>Tesla IPTV — HLS Player (hls.js)</header>
 
 <nav>
   <button class="tabBtn active" data-tab="live">Live</button>
@@ -29,105 +34,187 @@
   <button class="tabBtn" data-tab="series">Series</button>
 </nav>
 
-<input type="text" id="searchBar" placeholder="Search channels or content">
+<input id="searchBar" placeholder="Search channels or content">
 
 <section id="live" class="active"><ul id="liveList"></ul></section>
 <section id="movies"><ul id="moviesList"></ul></section>
 <section id="series"><ul id="seriesList"></ul></section>
 
-<video id="player" controls></video>
-<button id="backBtn">Back to List</button>
+<div id="playerWrap">
+  <video id="player" controls></video>
+  <button id="backBtn">Back to List</button>
+</div>
 
+<div id="log"></div>
+<footer>Tip: if video shows audio only, your provider may use an unsupported codec (HEVC/MPEG2). See notes below.</footer>
+
+<!-- hls.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <script>
-  // ==== LOCAL M3U FILE ====
-  const M3U_URL = "tesla.m3u"; // must be uploaded next to index.html
-  // =======================
+/* ====== CONFIGURE THIS ======
+ Replace the URL below with the m3u8-capable URL.
+ Try the 'output=m3u8' form first (works for many Xtream servers).
+ If you prefer not to include credentials here, replace with "tesla.m3u" and upload that file alongside index.html.
+============================= */
 
-  let allChannels = [];
+// Option A: Direct M3U8-producing get.php (first try this)
+const M3U_URL = "http://208893.mastertv1.eu:80/get.php?username=muhtar1919&password=4hr3ta362z&type=m3u_plus&output=m3u8";
 
-  async function fetchM3U() {
-    try {
-      const res = await fetch(M3U_URL);
-      const text = await res.text();
-      parseM3U(text);
-      renderChannels();
-    } catch(err) {
-      console.error("Failed to fetch M3U:", err);
-      alert("Could not load M3U file. Make sure tesla.m3u is uploaded.");
+// Option B (local M3U) - uncomment and use instead if you uploaded tesla.m3u to same folder
+// const M3U_URL = "tesla.m3u";
+
+const logEl = document.getElementById('log');
+
+function log(msg){
+  console.log(msg);
+  logEl.style.display = 'block';
+  logEl.textContent += msg + "\n";
+}
+
+/* ====== M3U PARSING & UI ====== */
+let allChannels = [];
+let hlsInstance = null;
+
+async function fetchM3U(){
+  try {
+    const res = await fetch(M3U_URL);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text();
+    if (!text || !text.includes("#EXTM3U")) throw new Error("Not a valid M3U response");
+    parseM3U(text);
+    renderChannels();
+  } catch(err){
+    alert("Could not load M3U: " + err.message + "\nCheck URL, credentials, or use local tesla.m3u");
+    log("Fetch M3U error: " + err);
+  }
+}
+
+function parseM3U(data){
+  const lines = data.split(/\r?\n/);
+  for (let i=0;i<lines.length;i++){
+    const l = lines[i].trim();
+    if (l.startsWith("#EXTINF")){
+      const nameMatch = l.match(/,(.*)$/);
+      const groupMatch = l.match(/group-title="([^"]+)"/i);
+      const logoMatch = l.match(/tvg-logo="([^"]+)"/i);
+      const name = nameMatch ? nameMatch[1].trim() : "Unknown";
+      const group = groupMatch ? groupMatch[1].trim() : "Live";
+      const logo = logoMatch ? logoMatch[1].trim() : "";
+      const url = (lines[i+1]||"").trim();
+      if (url) allChannels.push({name, group, logo, url});
     }
   }
+}
 
-  function parseM3U(data) {
-    const lines = data.split(/\r?\n/);
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith("#EXTINF")) {
-        const nameMatch = lines[i].match(/,(.*)$/);
-        const groupMatch = lines[i].match(/group-title="(.*)"/i);
-        const name = nameMatch ? nameMatch[1] : "Unknown";
-        const category = groupMatch ? groupMatch[1] : "Live";
-        const url = lines[i+1] ? lines[i+1].trim() : "";
-        if(url) allChannels.push({name, category, stream_url: url});
+/* UI rendering */
+function renderChannels(filter=""){
+  const live = document.getElementById('liveList');
+  const movies = document.getElementById('moviesList');
+  const series = document.getElementById('seriesList');
+  live.innerHTML = movies.innerHTML = series.innerHTML = "";
+
+  allChannels
+    .filter(ch => ch.name.toLowerCase().includes(filter.toLowerCase()))
+    .forEach(ch => {
+      const li = document.createElement('li');
+      li.textContent = ch.name;
+      if (ch.logo) {
+        const img = document.createElement('img');
+        img.src = ch.logo;
+        img.alt = "";
+        img.style.width = "18px";
+        img.style.height = "18px";
+        img.style.verticalAlign = "middle";
+        img.style.marginRight = "8px";
+        li.prepend(img);
       }
-    }
+      li.addEventListener('click', () => playChannel(ch.url));
+      if (/movie/i.test(ch.group)) movies.appendChild(li);
+      else if (/series|vod/i.test(ch.group)) series.appendChild(li);
+      else live.appendChild(li);
+    });
+}
+
+/* Search */
+document.getElementById('searchBar').addEventListener('input', e=>{
+  renderChannels(e.target.value);
+});
+
+/* Tabs */
+document.querySelectorAll('.tabBtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
+    document.querySelectorAll('.tabBtn').forEach(b=>b.classList.remove('active'));
+    document.getElementById(btn.dataset.tab).classList.add('active');
+    btn.classList.add('active');
+  });
+});
+
+/* ====== PLAYBACK using hls.js (supports most HLS variants) ====== */
+const player = document.getElementById('player');
+const backBtn = document.getElementById('backBtn');
+
+function destroyHls(){
+  if (hlsInstance){
+    try { hlsInstance.destroy(); } catch(e){ console.warn(e); }
+    hlsInstance = null;
+    player.src = "";
   }
+}
 
-  function renderChannels(filter="") {
-    const liveList = document.getElementById("liveList");
-    const moviesList = document.getElementById("moviesList");
-    const seriesList = document.getElementById("seriesList");
-    liveList.innerHTML = moviesList.innerHTML = seriesList.innerHTML = "";
+async function playChannel(url){
+  // ensure we start fresh
+  destroyHls();
+  log("Attempting to play: " + url);
 
-    allChannels
-      .filter(ch => ch.name.toLowerCase().includes(filter.toLowerCase()))
-      .forEach(ch => {
-        const li = document.createElement("li");
-        li.textContent = ch.name;
-        li.onclick = () => playChannel(ch.stream_url);
-        if (ch.category.toLowerCase().includes("movie")) moviesList.appendChild(li);
-        else if (ch.category.toLowerCase().includes("series")) seriesList.appendChild(li);
-        else liveList.appendChild(li);
+  // If the url points to plain transport stream or server requires specific headers, hls.js may still work if m3u8 provided.
+  // hls.js supports .m3u8. If your URL is a raw ts endpoint (no manifest), you need server-side conversion.
+  if (Hls.isSupported()){
+    hlsInstance = new Hls({
+      // debug: true
+    });
+    hlsInstance.on(Hls.Events.ERROR, function(event, data){
+      log("Hls error: " + data.type + " - " + data.details + " - " + (data.response || ""));
+      if (data && data.fatal){
+        log("Fatal HLS error, destroying hls instance.");
+        try { hlsInstance.destroy(); } catch(e){}
+      }
+    });
+    try {
+      hlsInstance.loadSource(url);
+      hlsInstance.attachMedia(player);
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, function(){
+        player.play().catch(e => log("Play() rejected: " + e));
       });
+    } catch(e){
+      log("hls load/attach failed: " + e);
+    }
+  } else if (player.canPlayType('application/vnd.apple.mpegurl')){
+    player.src = url;
+    try { await player.play(); } catch(e){ log("Native play error: " + e); }
+  } else {
+    alert("HLS not supported by this browser. Use VLC or transcode to H.264.");
+    log("Browser doesn't support HLS.");
   }
 
-  function playChannel(url) {
-    const player = document.getElementById("player");
-    const backBtn = document.getElementById("backBtn");
-    player.src = url;
-    player.play();
-    backBtn.style.display = "block";
-    // request fullscreen
+  // show back button and request fullscreen
+  backBtn.style.display = 'block';
+  try {
     if (player.requestFullscreen) player.requestFullscreen();
     else if (player.webkitRequestFullscreen) player.webkitRequestFullscreen();
     else if (player.msRequestFullscreen) player.msRequestFullscreen();
-  }
+  } catch(e){ /* ignore */ }
+}
 
-  document.getElementById("backBtn").addEventListener("click", () => {
-    const player = document.getElementById("player");
-    const backBtn = document.getElementById("backBtn");
-    player.pause();
-    player.src = "";
-    backBtn.style.display = "none";
-    // exit fullscreen
-    if (document.exitFullscreen) document.exitFullscreen();
-    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-    else if (document.msExitFullscreen) document.msExitFullscreen();
-  });
+/* Back button logic */
+backBtn.addEventListener('click', () => {
+  destroyHls();
+  backBtn.style.display = 'none';
+  try { if (document.exitFullscreen) document.exitFullscreen(); } catch(e){}
+});
 
-  document.getElementById("searchBar").addEventListener("input", e => {
-    renderChannels(e.target.value);
-  });
-
-  document.querySelectorAll(".tabBtn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("section").forEach(sec => sec.classList.remove("active"));
-      document.querySelectorAll(".tabBtn").forEach(b => b.classList.remove("active"));
-      document.getElementById(btn.dataset.tab).classList.add("active");
-      btn.classList.add("active");
-    });
-  });
-
-  fetchM3U();
+/* Fetch playlist and init */
+fetchM3U();
 </script>
-
 </body>
 </html>
