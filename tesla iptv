@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tesla IPTV Player</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #111; color: #eee; margin:0; padding:0; }
+  header { background: #222; padding: 10px; text-align: center; font-size: 1.5em; }
+  nav { display: flex; justify-content: space-around; background: #333; }
+  nav button { flex:1; padding: 10px; background: #333; color: #eee; border:none; cursor:pointer; }
+  nav button.active { background: #555; }
+  #searchBar { width: 90%; margin: 10px auto; display:block; padding:5px; font-size:1em; }
+  section { display:none; padding: 10px; max-height: 70vh; overflow-y: auto; }
+  section.active { display:block; }
+  ul { list-style:none; padding:0; }
+  li { padding:5px 0; cursor:pointer; border-bottom: 1px solid #444; }
+  video { width: 100%; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<header>Tesla IPTV Player</header>
+
+<nav>
+  <button class="tabBtn active" data-tab="live">Live</button>
+  <button class="tabBtn" data-tab="movies">Movies</button>
+  <button class="tabBtn" data-tab="series">Series</button>
+</nav>
+
+<input type="text" id="searchBar" placeholder="Search channels or content">
+
+<section id="live" class="active">
+  <ul id="liveList"></ul>
+</section>
+
+<section id="movies">
+  <ul id="moviesList"></ul>
+</section>
+
+<section id="series">
+  <ul id="seriesList"></ul>
+</section>
+
+<video id="player" controls></video>
+
+<script>
+  // ==== REPLACE THESE WITH YOUR INFO ====
+  const PORTAL = "http://208893.mastertv1.eu:80"; // your portal
+  const USERNAME = "muhtar1919";                 // your username
+  const PASSWORD = "4hr3ta362z";                            // your password
+  // ======================================
+
+  let allChannels = [];
+
+  async function fetchChannels() {
+    try {
+      const url = `${PORTAL}/player_api.php?username=${USERNAME}&password=${PASSWORD}&action=get_live_categories`;
+      const res = await fetch(url);
+      const categories = await res.json();
+
+      for (const cat of categories) {
+        const catUrl = `${PORTAL}/player_api.php?username=${USERNAME}&password=${PASSWORD}&action=get_live_streams&category_id=${cat.category_id}`;
+        const catRes = await fetch(catUrl);
+        const streams = await catRes.json();
+        streams.forEach(s => allChannels.push({...s, category: cat.category_name}));
+      }
+
+      renderChannels();
+    } catch(err) {
+      console.error("Failed to fetch channels:", err);
+      alert("Could not load channels. Check your portal/username/password.");
+    }
+  }
+
+  function renderChannels(filter="") {
+    const liveList = document.getElementById("liveList");
+    const moviesList = document.getElementById("moviesList");
+    const seriesList = document.getElementById("seriesList");
+    liveList.innerHTML = moviesList.innerHTML = seriesList.innerHTML = "";
+
+    allChannels
+      .filter(ch => ch.name.toLowerCase().includes(filter.toLowerCase()))
+      .forEach(ch => {
+        const li = document.createElement("li");
+        li.textContent = ch.name;
+        li.onclick = () => { document.getElementById("player").src = ch.stream_url; };
+        if (ch.category.toLowerCase().includes("movie")) moviesList.appendChild(li);
+        else if (ch.category.toLowerCase().includes("series")) seriesList.appendChild(li);
+        else liveList.appendChild(li);
+      });
+  }
+
+  document.getElementById("searchBar").addEventListener("input", e => {
+    renderChannels(e.target.value);
+  });
+
+  document.querySelectorAll(".tabBtn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("section").forEach(sec => sec.classList.remove("active"));
+      document.querySelectorAll(".tabBtn").forEach(b => b.classList.remove("active"));
+      document.getElementById(btn.dataset.tab).classList.add("active");
+      btn.classList.add("active");
+    });
+  });
+
+  fetchChannels();
+</script>
+
+</body>
+</html>
