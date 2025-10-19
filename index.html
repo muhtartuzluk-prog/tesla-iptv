@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tesla IPTV Player - Fullscreen M3U</title>
+<title>Tesla IPTV Player - Local M3U</title>
 <style>
   body { font-family: Arial, sans-serif; background: #111; color: #eee; margin:0; padding:0; }
   header { background: #222; padding: 10px; text-align: center; font-size: 1.5em; }
@@ -21,7 +21,7 @@
 </head>
 <body>
 
-<header>Tesla IPTV Player (Fullscreen)</header>
+<header>Tesla IPTV Player (Local M3U)</header>
 
 <nav>
   <button class="tabBtn active" data-tab="live">Live</button>
@@ -39,9 +39,9 @@
 <button id="backBtn">Back to List</button>
 
 <script>
-  // ==== ENTER YOUR M3U URL HERE ====
-  const M3U_URL = "https://cors-anywhere.herokuapp.com/http://208893.mastertv1.eu:80/get.php?username=muhtar1919&password=4hr3ta362z&type=m3u_plus&output=ts";
-  // =================================
+  // ==== LOCAL M3U FILE ====
+  const M3U_URL = "tesla.m3u"; // must be uploaded next to index.html
+  // =======================
 
   let allChannels = [];
 
@@ -53,7 +53,7 @@
       renderChannels();
     } catch(err) {
       console.error("Failed to fetch M3U:", err);
-      alert("Could not load M3U. Check your URL and password.");
+      alert("Could not load M3U file. Make sure tesla.m3u is uploaded.");
     }
   }
 
