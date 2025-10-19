@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tesla IPTV Player</title>
+<title>Tesla IPTV Player - Fullscreen M3U</title>
 <style>
   body { font-family: Arial, sans-serif; background: #111; color: #eee; margin:0; padding:0; }
   header { background: #222; padding: 10px; text-align: center; font-size: 1.5em; }
@@ -16,11 +16,12 @@
   ul { list-style:none; padding:0; }
   li { padding:5px 0; cursor:pointer; border-bottom: 1px solid #444; }
   video { width: 100%; margin-top: 10px; }
+  #backBtn { position: fixed; top: 10px; right: 10px; padding: 10px 15px; font-size: 1em; background: #f00; color: #fff; border: none; cursor: pointer; display:none; z-index: 1000; }
 </style>
 </head>
 <body>
 
-<header>Tesla IPTV Player</header>
+<header>Tesla IPTV Player (Fullscreen)</header>
 
 <nav>
   <button class="tabBtn active" data-tab="live">Live</button>
@@ -30,46 +31,43 @@
 
 <input type="text" id="searchBar" placeholder="Search channels or content">
 
-<section id="live" class="active">
-  <ul id="liveList"></ul>
-</section>
-
-<section id="movies">
-  <ul id="moviesList"></ul>
-</section>
-
-<section id="series">
-  <ul id="seriesList"></ul>
-</section>
+<section id="live" class="active"><ul id="liveList"></ul></section>
+<section id="movies"><ul id="moviesList"></ul></section>
+<section id="series"><ul id="seriesList"></ul></section>
 
 <video id="player" controls></video>
+<button id="backBtn">Back to List</button>
 
 <script>
-  // ==== REPLACE THESE WITH YOUR INFO ====
-  const PORTAL = "http://208893.mastertv1.eu:80"; // your portal
-  const USERNAME = "muhtar1919";                 // your username
-  const PASSWORD = "4hr3ta362z";                            // your password
-  // ======================================
+  // ==== ENTER YOUR M3U URL HERE ====
+  const M3U_URL = "http://208893.mastertv1.eu:80/get.php?username=muhtar1919&password=YOURPASSWORD&type=m3u_plus&output=ts";
+  // =================================
 
   let allChannels = [];
 
-  async function fetchChannels() {
+  async function fetchM3U() {
     try {
-      const url = `${PORTAL}/player_api.php?username=${USERNAME}&password=${PASSWORD}&action=get_live_categories`;
-      const res = await fetch(url);
-      const categories = await res.json();
-
-      for (const cat of categories) {
-        const catUrl = `${PORTAL}/player_api.php?username=${USERNAME}&password=${PASSWORD}&action=get_live_streams&category_id=${cat.category_id}`;
-        const catRes = await fetch(catUrl);
-        const streams = await catRes.json();
-        streams.forEach(s => allChannels.push({...s, category: cat.category_name}));
-      }
-
+      const res = await fetch(M3U_URL);
+      const text = await res.text();
+      parseM3U(text);
       renderChannels();
     } catch(err) {
-      console.error("Failed to fetch channels:", err);
-      alert("Could not load channels. Check your portal/username/password.");
+      console.error("Failed to fetch M3U:", err);
+      alert("Could not load M3U. Check your URL and password.");
+    }
+  }
+
+  function parseM3U(data) {
+    const lines = data.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith("#EXTINF")) {
+        const nameMatch = lines[i].match(/,(.*)$/);
+        const groupMatch = lines[i].match(/group-title="(.*)"/i);
+        const name = nameMatch ? nameMatch[1] : "Unknown";
+        const category = groupMatch ? groupMatch[1] : "Live";
+        const url = lines[i+1] ? lines[i+1].trim() : "";
+        if(url) allChannels.push({name, category, stream_url: url});
+      }
     }
   }
 
@@ -84,12 +82,36 @@
       .forEach(ch => {
         const li = document.createElement("li");
         li.textContent = ch.name;
-        li.onclick = () => { document.getElementById("player").src = ch.stream_url; };
+        li.onclick = () => playChannel(ch.stream_url);
         if (ch.category.toLowerCase().includes("movie")) moviesList.appendChild(li);
         else if (ch.category.toLowerCase().includes("series")) seriesList.appendChild(li);
         else liveList.appendChild(li);
       });
   }
+
+  function playChannel(url) {
+    const player = document.getElementById("player");
+    const backBtn = document.getElementById("backBtn");
+    player.src = url;
+    player.play();
+    backBtn.style.display = "block";
+    // request fullscreen
+    if (player.requestFullscreen) player.requestFullscreen();
+    else if (player.webkitRequestFullscreen) player.webkitRequestFullscreen();
+    else if (player.msRequestFullscreen) player.msRequestFullscreen();
+  }
+
+  document.getElementById("backBtn").addEventListener("click", () => {
+    const player = document.getElementById("player");
+    const backBtn = document.getElementById("backBtn");
+    player.pause();
+    player.src = "";
+    backBtn.style.display = "none";
+    // exit fullscreen
+    if (document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    else if (document.msExitFullscreen) document.msExitFullscreen();
+  });
 
   document.getElementById("searchBar").addEventListener("input", e => {
     renderChannels(e.target.value);
@@ -104,7 +126,7 @@
     });
   });
 
-  fetchChannels();
+  fetchM3U();
 </script>
 
 </body>
